@@ -1,19 +1,44 @@
 import streamlit as st
 import subprocess
+import requests
+import time
 import os
 
-st.title("Test OSRM")
+st.title("Test OSRM local")
 
-# Verificar que osrm-routed existe
-if os.path.exists("/usr/bin/osrm-routed"):
-    st.success("✅ osrm-routed instalado correctamente")
-else:
-    resultado = subprocess.run(["which", "osrm-routed"], capture_output=True, text=True)
-    if resultado.returncode == 0:
-        st.success(f"✅ osrm-routed encontrado en: {resultado.stdout}")
-    else:
-        st.error("❌ osrm-routed NO encontrado")
+@st.cache_resource
+def levantar_osrm():
+    # Dar permisos de ejecución
+    os.chmod("osrm-routed", 0o755)
+    
+    # Levantar en background
+    subprocess.Popen(
+        ["./osrm-routed", "--algorithm", "mld", "--max-table-size", "10000"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+    
+    # Esperar que levante
+    for intento in range(10):
+        try:
+            r = requests.get("http://localhost:5000/", timeout=2)
+            return "✅ OSRM corriendo en localhost:5000"
+        except:
+            time.sleep(2)
+    
+    return "❌ OSRM no levantó"
 
-# Verificar versión
-version = subprocess.run(["osrm-routed", "--version"], capture_output=True, text=True)
-st.write(f"Versión: {version.stdout or version.stderr}")
+resultado = levantar_osrm()
+st.write(resultado)
+
+# Test de una ruta simple
+if "✅" in resultado:
+    try:
+        url = "http://localhost:5000/route/v1/driving/-58.38,-34.60;-58.40,-34.62?overview=false"
+        r = requests.get(url, timeout=5).json()
+        if r.get("code") == "Ok":
+            st.success(f"✅ Ruta calculada: {r['routes'][0]['distance']}m")
+        else:
+            st.error(f"❌ Error en ruta: {r}")
+    except Exception as e:
+        st.error(f"❌ Error: {e}")
